@@ -1,0 +1,13 @@
+# Render service manifest (template). Replace values as needed and add secrets via Render Dashboard.
+services:
+  - type: web
+    name: travel-agent
+    env: docker
+    dockerfilePath: Dockerfile
+    branch: main
+    plan: starter
+    # Optional: override the start command if needed
+    # startCommand: "streamlit run streamlit_app.py --server.port $PORT --server.address 0.0.0.0"
+    envVars:
+      - key: PORT
+        value: "8501"
