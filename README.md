@@ -1,72 +1,97 @@
 # 🌍 AI Travel Agent (LangGraph Edition)
 
-A fully functional **Agentic AI Travel Planner** built using **LangGraph**, **OpenAI**, and **SingleStore**.
+An **agentic travel planner** built around a LangGraph-style workflow. It:
 
-This AI system helps users:
-- ✔️ Get hotel recommendations  
-- ✔️ Find flights  
-- ✔️ Fetch weather information  
-- ✔️ Cache results in SingleStore. Get your [free SingleStore account](https://bit.ly/SingleStore-Agentic-App)  
-- ✔️ Build reproducible agentic workflows  
+- **Generates** hotels + flights with OpenAI (LLM)
+- **Fetches** a simple weather summary (Open‑Meteo)
+- **Optionally caches** results in SingleStore
+- Provides both a **Streamlit UI** (`streamlit_app.py`) and a **CLI demo** (`main.py`)
 
-All powered by a modular LangGraph graph with independent agents.
+Related docs:
+
+- **Architecture**: `docs/agent_architecture.md`
+- **Deploy**: `docs/deploy.md`, `docs/deploy_render.md`
+
+Live demo: `https://travel-agentic-ai.onrender.com/`
 
 ---
 
-Live demo: https://travel-agentic-ai.onrender.com/
+## 🚀 Quickstart (recommended: Streamlit UI)
 
+### Prereqs
 
-## 🚀 Features
+- Python 3.11+
+- An OpenAI API key
 
-
-
-For a detailed description of the agent architecture and step-by-step examples, see `docs/agent_architecture.md`.
-
-## 📦 Installation
-
-Clone the repository:
+### Install
 
 ```bash
 git clone https://github.com/pavanbelagatti/Agentic-AI-Travel-Agent.git
-cd Agentic-AI-Travel-Agent.git
-```
-
-### Create a virtual environment
-```
-python3 -m venv venv
-```
-
-```python3 -m venv .venv
-source .venv/bin/activate     # For Mac/Linux
-OR
-.\.venv\Scripts\activate      # For Windows
-```
-
-### Install dependencies 
-```
+cd Agentic-AI-Travel-Agent
+python -m venv .venv
+.\.venv\Scripts\activate
 pip install -r requirements.txt
+pip install streamlit
+copy .env.example .env
 ```
 
-### 🔧 Environment Variables
-
-Copy `.env.example` to `.env` and fill in your real values locally. Do NOT commit your `.env` file to the repository.
+On macOS/Linux, activate with:
 
 ```bash
+source .venv/bin/activate
 cp .env.example .env
-# then edit .env and add your secrets locally
 ```
 
-If you are deploying to a platform (Render, Streamlit Cloud, etc.) add the same variables to the platform's secret manager or environment settings.
+Edit `.env` and set `OPENAI_API_KEY`.
 
-### 🗄️ Setting Up SingleStore
+### Run
 
-- [Signup & Log in to SingleStore Account](https://bit.ly/SingleStore-Agentic-App)
-- Click Create Database → Name it TravelAG or whatever you wish to name it
-- Open the SQL Editor in the SingleStore dashboard
-- Run the following table creation queries:
-
-#### Accommodations table
+```bash
+streamlit run streamlit_app.py
 ```
+
+Then open `http://localhost:8501`.
+
+---
+
+## 🧪 CLI (developer/demo)
+
+The CLI entrypoint is `main.py`. It currently runs with **hardcoded demo inputs** (interactive `input()` lines are present but commented out).
+
+```bash
+python main.py
+```
+
+---
+
+## 🔧 Environment variables
+
+These names match what the code reads (`agents/*`, `database/*`):
+
+- **Required**
+  - `OPENAI_API_KEY`: used by `agents/search_agent.py`
+- **Optional**
+  - `OPENAI_CHAT_MODEL`: defaults to `gpt-4.1-mini`
+  - `AVIATIONSTACK_API_KEY`: enables the AviationStack enrichment path in `agents/flight_api_agent.py`
+  - `S2_HOST`, `S2_USER`, `S2_PASSWORD`, `S2_DB`: enables SingleStore caching (`database/cache.py`, `database/store_results.py`)
+
+Use `.env.example` as a template:
+
+```bash
+copy .env.example .env
+```
+
+For deployments (Render/Streamlit Cloud), set the same variables in the platform environment settings (don’t upload `.env`).
+
+---
+
+## 🗄️ SingleStore setup (optional cache)
+
+If you want caching enabled, create these tables in your SingleStore database.
+
+### `accommodations`
+
+```sql
 CREATE TABLE IF NOT EXISTS accommodations (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     provider VARCHAR(100),
@@ -83,8 +108,9 @@ CREATE TABLE IF NOT EXISTS accommodations (
 );
 ```
 
-#### Flights table
-```
+### `flights`
+
+```sql
 CREATE TABLE IF NOT EXISTS flights (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     provider VARCHAR(100),
@@ -98,22 +124,31 @@ CREATE TABLE IF NOT EXISTS flights (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 ```
-These tables will remain empty initially — your LangGraph agents will store results into them automatically during the first run.
 
-### Running the application
+---
+
+## 🐳 Docker
+
+### Build & run
+
+```bash
+docker build -t travel-agent:latest .
+docker run -p 8501:8501 --env-file .env --rm travel-agent:latest
 ```
-python main.py
+
+### docker-compose
+
+```bash
+docker-compose up --build
 ```
 
-#### You’ll be asked:
-- Origin airport/city
-- Destination
-- Start & end dates
-- Bedrooms
-- Budget
-- Minimum rating
+---
 
-#### After the LangGraph workflow completes, you’ll get:
-- Weather summary
-- Top hotel recommendations
-- Top flight options
+## 🗂️ Repo layout (high-level)
+
+- `streamlit_app.py`: Streamlit UI entrypoint
+- `main.py`: CLI/demo entrypoint
+- `graph.py`: workflow wiring (nodes + edges)
+- `state.py`: `TravelState` schema passed between agents
+- `agents/`: weather, LLM “live search”, recommendation, flight enrichment
+- `database/`: SingleStore connector + cache read/write

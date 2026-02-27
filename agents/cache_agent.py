@@ -14,6 +14,8 @@ def cache_agent(state):
       route to the live_search node.
     """
     conn = get_conn()
+    if not conn:
+        return None
     cur = conn.cursor()
 
     # ---- Hotels for this destination ----

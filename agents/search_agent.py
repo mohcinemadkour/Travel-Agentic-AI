@@ -60,8 +60,11 @@ User trip details:
 - Bedrooms needed: {state.bedrooms}
 - Max hotel price per night: {state.max_price_per_night}
 - Minimum hotel rating: {state.min_rating}
-- Max flight price (if provided): {state.max_flight_price}
+"""
+    if state.max_flight_price is not None:
+        user_prompt += f"- Max flight price: {state.max_flight_price}\n"
 
+    user_prompt += """
 Generate hotels and flights that match these constraints as much as possible.
 
 Return ONLY the JSON object as specified in the system message.
@@ -129,7 +132,7 @@ Do NOT include any additional keys, text, or markdown.
         return state
 
     except Exception as e:
-        print("⚠️ live_search error, leaving results empty:", repr(e))
+        print("[Warning] live_search error, leaving results empty:", repr(e))
         state.accommodations = []
         state.flights = []
         return state

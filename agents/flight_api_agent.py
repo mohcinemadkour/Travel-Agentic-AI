@@ -71,14 +71,14 @@ def fetch_flights_from_api(state):
 
     api_key = os.getenv("AVIATIONSTACK_API_KEY")
     if not api_key:
-        print("⚠️ AVIATIONSTACK_API_KEY not set; skipping real flight API.")
+        print("[Warning] AVIATIONSTACK_API_KEY not set; skipping real flight API.")
         return state
 
     origin_iata = (state.origin or "").upper()
     dest_iata = _city_to_iata(state.destination)
 
     if not origin_iata or not dest_iata:
-        print("⚠️ Missing origin/destination IATA codes, cannot query AviationStack.")
+        print("[Warning] Missing origin/destination IATA codes, cannot query AviationStack.")
         return state
 
     params = {
@@ -111,7 +111,7 @@ def fetch_flights_from_api(state):
             api_url_map[key] = url
 
         if not api_url_map:
-            print("⚠️ AviationStack returned no suitable passenger flights; leaving flights unchanged.")
+            print("[Warning] AviationStack returned no suitable passenger flights; leaving flights unchanged.")
             return state
 
         # ── SMART MERGE ──────────────────────────────────────────────
@@ -158,6 +158,6 @@ def fetch_flights_from_api(state):
         return state
 
     except Exception as e:
-        print(f"⚠️ Error calling AviationStack: {e!r}")
+        print(f"[Warning] Error calling AviationStack: {e!r}")
         # On error, just keep whatever flights we already have (LLM ones)
         return state

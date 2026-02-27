@@ -43,7 +43,19 @@ docker-compose up --build
 
 4) Environment variables and secrets
 
-- Provide your `.env` file to the container via `--env-file` (local) or configure secrets in the hosting provider.
+- Locally, create `.env` from `.env.example` and fill in real values.
+- For Docker, provide your `.env` file to the container via `--env-file` (local) or configure secrets in the hosting provider.
+- With `docker-compose`, either:
+  - add an `env_file: .env` entry to `docker-compose.yml`, or
+  - set the variables in the Compose service `environment:` section, or
+  - export them in your shell before running Compose.
+
+Common variables:
+
+- `OPENAI_API_KEY` (required)
+- `OPENAI_CHAT_MODEL` (optional)
+- `AVIATIONSTACK_API_KEY` (optional)
+- `S2_HOST`, `S2_USER`, `S2_PASSWORD`, `S2_DB` (optional)
 
 5) Verifying the app
 

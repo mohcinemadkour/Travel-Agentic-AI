@@ -6,6 +6,8 @@ def store_results(state):
     Called only on cache miss.
     """
     conn = get_conn()
+    if not conn:
+        return
     cur = conn.cursor()
 
     # Accommodations
