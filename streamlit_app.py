@@ -86,7 +86,7 @@ def main():
                 # Show hotels with photos when available (from Google Places)
                 has_photos = any(h.get("photo_url") for h in recommended_hotels)
                 if has_photos:
-                    for h in recommended_hotels:
+                    for i, h in enumerate(recommended_hotels, 1):
                         col_img, col_info = st.columns([1, 3])
                         with col_img:
                             photo_url = h.get("photo_url")
@@ -95,29 +95,41 @@ def main():
                             else:
                                 st.write("")
                         with col_info:
+                            rank = i  # 1 = top pick, 2, 3, 4, 5
                             name = h.get("name") or "—"
                             rating = h.get("rating")
                             price = h.get("price") or h.get("price_per_night")
                             url = (h.get("url") or "").strip()
+                            map_url = (h.get("map_url") or "").strip()
                             if not url or not url.startswith("http"):
                                 q = " ".join(filter(None, [name, h.get("city") or final_state.get("destination"), "book"]))
                                 url = f"https://www.google.com/search?q={quote_plus(q)}"
-                            st.markdown(f"**{name}**")
-                            st.caption(f"⭐ {rating}  ·  {f'${price:.0f}/night' if price else '—'}  ·  [View on map / book]({url})")
+                            if not map_url or not map_url.startswith("http"):
+                                q = " ".join(filter(None, [name, h.get("city") or final_state.get("destination")]))
+                                map_url = f"https://www.google.com/maps/search/?api=1&query={quote_plus(q)}"
+                            st.markdown(f"**#{rank} {name}**")
+                            st.caption(f"⭐ {rating}  ·  {f'${price:.0f}/night' if price else '—'}  ·  [View on map]({map_url})  |  [Book]({url})")
                         st.divider()
                     st.caption("Prices are estimates from Google; verify on booking sites.")
                 else:
                     hotels_data = []
-                    for h in recommended_hotels:
+                    for i, h in enumerate(recommended_hotels, 1):
+                        rank = i  # 1 = top pick, 2, 3, 4, 5
                         url = (h.get("url") or "").strip()
+                        map_url = (h.get("map_url") or "").strip()
                         if not url or not url.startswith("http"):
                             q = " ".join(filter(None, [h.get("name"), h.get("city") or final_state.get("destination"), "book"]))
                             url = f"https://www.google.com/search?q={quote_plus(q)}"
+                        if not map_url or not map_url.startswith("http"):
+                            q = " ".join(filter(None, [h.get("name"), h.get("city") or final_state.get("destination")]))
+                            map_url = f"https://www.google.com/maps/search/?api=1&query={quote_plus(q)}"
                         hotels_data.append({
+                            "#": rank,
                             "name": h.get("name") or "—",
                             "rating": h.get("rating"),
                             "price": h.get("price") or h.get("price_per_night"),
-                            "url": url,
+                            "map": map_url,
+                            "book": url,
                         })
                     hotels_df = pd.DataFrame(hotels_data)
                     st.caption("Prices are AI-generated estimates; verify on booking sites.")
@@ -125,7 +137,8 @@ def main():
                         hotels_df,
                         use_container_width=True,
                         column_config={
-                            "url": st.column_config.LinkColumn("Links", display_text="View / Book"),
+                            "map": st.column_config.LinkColumn("View on map", display_text="Map"),
+                            "book": st.column_config.LinkColumn("Book", display_text="Book"),
                         },
                         hide_index=True,
                     )
@@ -136,26 +149,21 @@ def main():
             if flights:
                 flights_data = []
                 for f in flights:
-                    dep = f.get("departure_time") or f.get("departure") or f.get("depart_time") or f.get("time")
-                    arr = f.get("arrival_time") or f.get("arrival")
-                    time_range = None
-                    if dep and arr:
-                        time_range = f"{dep} → {arr}"
-                    elif dep:
-                        time_range = dep
-                    elif arr:
-                        time_range = arr
-
                     url = (f.get("url") or "").strip()
                     if not url or not url.startswith("http"):
-                        o, d = f.get("origin"), f.get("destination")
-                        url = f"https://www.google.com/travel/flights?q=Flights+from+{o or 'XXX'}+to+{d or 'XXX'}"
+                        o, d = (f.get("origin") or "XXX").upper()[:3], (f.get("destination") or "XXX").upper()[:3]
+                        url = f"https://www.google.com/travel/flights/flights-from-{o.lower()}-to-{d.lower()}.html"
+                    price = f.get("price")
+                    currency = f.get("total_currency") or "USD"
+                    try:
+                        price_str = f"{currency} {float(price):.0f}" if price is not None else None
+                    except (TypeError, ValueError):
+                        price_str = price
                     flights_data.append({
                         "airline": f.get("airline"),
                         "origin": f.get("origin"),
                         "destination": f.get("destination"),
-                        "time": time_range,
-                        "price": f.get("price"),
+                        "price": price_str or price,
                         "url": url,
                     })
 

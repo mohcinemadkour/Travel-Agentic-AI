@@ -3,6 +3,8 @@ import os
 from openai import OpenAI
 
 from agents.places_client import fetch_hotels_from_places
+from agents.serpapi_client import fetch_hotels_from_serpapi
+from agents.destination_utils import resolve_destination_for_hotels
 
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -10,21 +12,34 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 def live_search(state):
     """
     Fetch accommodations (hotels) and flights.
-    - Hotels: Google Places API when GOOGLE_PLACES_API_KEY is set, else LLM.
+    - Hotels: SerpAPI (real prices) > Google Places > LLM.
     - Flights: LLM (enriched later by Aviation Edge).
     """
-    accommodations_from_places = []
+    accommodations_from_api = []
+    destination = (state.destination or "").strip()
+    # Resolve airport codes (e.g. BOM) to city names (e.g. Mumbai) for hotel search
+    hotel_destination = resolve_destination_for_hotels(destination) if destination else ""
 
-    if os.getenv("GOOGLE_PLACES_API_KEY") or os.getenv("GOOGLE_MAPS_API_KEY"):
-        accommodations_from_places = fetch_hotels_from_places(
-            destination=state.destination or "",
+    if hotel_destination and os.getenv("SERPAPI_API_KEY") and state.start_date and state.end_date:
+        accommodations_from_api = fetch_hotels_from_serpapi(
+            destination=hotel_destination,
+            start_date=state.start_date,
+            end_date=state.end_date,
+            max_price_per_night=state.max_price_per_night,
+            min_rating=state.min_rating,
+            adults=2,
+            limit=10,
+        )
+    elif hotel_destination and (os.getenv("GOOGLE_PLACES_API_KEY") or os.getenv("GOOGLE_MAPS_API_KEY")):
+        accommodations_from_api = fetch_hotels_from_places(
+            destination=hotel_destination,
             max_price_per_night=state.max_price_per_night,
             min_rating=state.min_rating,
             bedrooms=state.bedrooms or 1,
             limit=10,
         )
 
-    # LLM for flights (and hotels when Places not used)
+    # LLM for flights (and hotels when neither SerpAPI nor Places used)
     system_prompt = """
 You are a travel planning AI. You help users find hotels and flights.
 
@@ -139,13 +154,13 @@ Do NOT include any additional keys, text, or markdown.
         if not isinstance(flights, list):
             flights = []
 
-        # Use Google Places hotels when available; else LLM
-        state.accommodations = accommodations_from_places if accommodations_from_places else accommodations
+        # Use SerpAPI/Places hotels when available; else LLM
+        state.accommodations = accommodations_from_api if accommodations_from_api else accommodations
         state.flights = flights
         return state
 
     except Exception as e:
         print("[Warning] live_search error:", repr(e))
-        state.accommodations = accommodations_from_places if accommodations_from_places else []
+        state.accommodations = accommodations_from_api if accommodations_from_api else []
         state.flights = []
         return state

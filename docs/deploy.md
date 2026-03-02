@@ -54,7 +54,8 @@ Common variables:
 
 - `OPENAI_API_KEY` (required)
 - `OPENAI_CHAT_MODEL` (optional)
-- `GOOGLE_PLACES_API_KEY` / `GOOGLE_MAPS_API_KEY` (optional; enables Google Places + Geocoding for real hotel data)
+- `SERPAPI_API_KEY` (optional; enables SerpAPI Google Hotels for real hotel prices)
+- `GOOGLE_PLACES_API_KEY` / `GOOGLE_MAPS_API_KEY` (optional; enables Google Places + Geocoding for hotel data)
 - `AVIATION_EDGE_API_KEY` (optional; enables Aviation Edge routes enrichment for flights; also supports legacy `AVIATIONSTACK_API_KEY`)
 - `S2_HOST`, `S2_USER`, `S2_PASSWORD`, `S2_DB` (optional)
 

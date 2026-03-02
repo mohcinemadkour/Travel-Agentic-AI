@@ -1,5 +1,11 @@
 from .singlestore_client import get_conn
 
+try:
+    from agents.destination_utils import resolve_destination_for_hotels
+except ImportError:
+    def resolve_destination_for_hotels(x): return x or ""
+
+
 def check_cache(state):
     """
     Check SingleStore for cached hotels & flights for this route.
@@ -15,8 +21,9 @@ def check_cache(state):
 
     cur = conn.cursor()
 
-    # Hotels for destination
-    # `accommodations` table stores city/country in `location_city` / `location_country`.
+    # Hotels: use resolved city (BOM -> Mumbai) since we store by city name
+    hotel_destination = resolve_destination_for_hotels(state.destination or "")
+
     cur.execute("""
         SELECT
             name,
@@ -29,7 +36,7 @@ def check_cache(state):
         FROM accommodations
         WHERE LOWER(location_city) = LOWER(%s)
         LIMIT 10
-    """, (state.destination,))
+    """, (hotel_destination or state.destination,))
     hotel_cols = [col[0] for col in cur.description]
     hotel_rows = cur.fetchall()
     hotels = [dict(zip(hotel_cols, r)) for r in hotel_rows]

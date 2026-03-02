@@ -2,7 +2,6 @@
 
 import os
 import requests
-from urllib.parse import quote_plus
 
 # City/code → IATA mapping for API and URL building
 CITY_TO_IATA = {
@@ -42,13 +41,55 @@ def _city_to_iata(city: str) -> str:
 
 
 def _google_flights_url(origin: str, dest: str, start: str | None, end: str | None) -> str:
+    """Build Google Flights URL that pre-fills route and shows results."""
+    o = (origin or "").upper().strip()[:3]
+    d = (dest or "").upper().strip()[:3]
+    if not o or not d:
+        return "https://www.google.com/travel/flights"
+    base = f"https://www.google.com/travel/flights/flights-from-{o.lower()}-to-{d.lower()}.html"
+    if start or end:
+        params = []
+        if start:
+            params.append(f"outbound_date={start}")
+        if end:
+            params.append(f"return_date={end}")
+        if params:
+            base += "?" + "&".join(params)
+    return base
+
+
+def _flight_url_for_display(
+    airline: str,
+    origin: str,
+    dest: str,
+    start: str | None,
+    end: str | None,
+) -> str:
     """
-    Build a real Google Flights search URL for this route and dates.
+    Build URL that directs to the specific flight (airline + route + dates).
+    Uses Google search for "{airline} flights {origin} to {dest} {dates}"
+    which surfaces a Flights onebox linking to that airline's options.
     """
-    q = f"Flights from {origin} to {dest}"
-    if start:
-        q += f" on {start}"
-    return f"https://www.google.com/travel/flights?q={quote_plus(q)}"
+    from urllib.parse import quote_plus
+
+    o = (origin or "").upper().strip()[:3]
+    d = (dest or "").upper().strip()[:3]
+    if not o or not d:
+        return _google_flights_url(origin, dest, start, end)
+
+    airline_clean = (airline or "").strip().lower()
+
+    # Google search for "{airline} flights {origin} to {dest} {dates}" surfaces
+    # a Flights onebox that links to that airline's options for the route
+    if airline_clean:
+        q_parts = [(airline or "").strip(), "flights", o, "to", d]
+        if start:
+            q_parts.append(start)
+        if end:
+            q_parts.append(end)
+        q = " ".join(str(p) for p in q_parts if p)
+        return f"https://www.google.com/search?q={quote_plus(q)}"
+    return _google_flights_url(origin, dest, start, end)
 
 
 def _normalize_airline(name: str) -> str:
@@ -58,14 +99,14 @@ def _normalize_airline(name: str) -> str:
     return name.lower().strip().replace(" ", "").replace("-", "")
 
 
-def _ensure_google_flights_urls(state, origin_iata: str, dest_iata: str) -> None:
-    """Ensure every flight has a Google Flights URL for the route. Works for future dates."""
+def _ensure_flight_urls(state, origin_iata: str, dest_iata: str) -> None:
+    """Ensure every flight has a URL that directs to that specific flight (airline + route + dates)."""
     flights = state.flights or []
     for f in flights:
-        if not f.get("url") or "google.com/travel/flights" not in (f.get("url") or ""):
-            o = (f.get("origin") or origin_iata).upper()
-            d = (f.get("destination") or dest_iata).upper()
-            f["url"] = _google_flights_url(o, d, state.start_date, state.end_date)
+        o = (f.get("origin") or origin_iata).upper()
+        d = (f.get("destination") or dest_iata).upper()
+        airline = f.get("airline") or ""
+        f["url"] = _flight_url_for_display(airline, o, d, state.start_date, state.end_date)
     state.flights = flights
 
 
@@ -127,9 +168,8 @@ def _fetch_aviation_edge_routes(api_key: str, origin_iata: str, dest_iata: str) 
 
 def fetch_flights_from_api(state):
     """
-    Use Aviation Edge API (https://aviation-edge.com/developers) to discover
-    real flights on the route. Enriches LLM flights with airline data and
-    Google Flights URLs for booking.
+    Use Duffel (real prices) > Aviation Edge (routes) to discover flights.
+    When DUFFEL_API_KEY is set and dates available, fetches real flight prices.
     """
 
     origin_iata = _city_to_iata(state.origin or "")
@@ -137,13 +177,33 @@ def fetch_flights_from_api(state):
 
     if not origin_iata or not dest_iata:
         print("[Warning] Missing origin/destination IATA codes.")
-        _ensure_google_flights_urls(state, origin_iata or "XXX", dest_iata or "XXX")
+        _ensure_flight_urls(state, origin_iata or "XXX", dest_iata or "XXX")
         return state
 
-    # Support both Aviation Edge (preferred) and legacy AviationStack env var
+    # Duffel: real flight prices when key + dates available
+    if os.getenv("DUFFEL_API_KEY") and state.start_date:
+        try:
+            from agents.duffel_client import fetch_flights_from_duffel
+
+            duffel_flights = fetch_flights_from_duffel(
+                origin_iata=origin_iata,
+                dest_iata=dest_iata,
+                departure_date=state.start_date,
+                return_date=state.end_date,
+                adults=1,
+                limit=10,
+            )
+            if duffel_flights:
+                state.flights = duffel_flights
+                _ensure_flight_urls(state, origin_iata, dest_iata)
+                return state
+        except Exception as e:
+            print(f"[Info] Duffel API: {e!r} (falling back to Aviation Edge)")
+
+    # Aviation Edge: routes only (no prices)
     api_key = os.getenv("AVIATION_EDGE_API_KEY") or os.getenv("AVIATIONSTACK_API_KEY")
     if not api_key:
-        _ensure_google_flights_urls(state, origin_iata, dest_iata)
+        _ensure_flight_urls(state, origin_iata, dest_iata)
         return state
 
     api_url_map: dict[tuple[str, str, str], tuple[str, str]] = {}
@@ -205,6 +265,6 @@ def fetch_flights_from_api(state):
         print(f"[Info] Aviation Edge API: {e!r} (using Google Flights URLs)")
 
     # Always ensure every flight has a working Google Flights URL (API free tier is real-time only)
-    _ensure_google_flights_urls(state, origin_iata, dest_iata)
+    _ensure_flight_urls(state, origin_iata, dest_iata)
 
     return state
