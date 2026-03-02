@@ -3,13 +3,13 @@
 from urllib.parse import quote_plus
 
 
-def _google_hotel_search_url(name: str, city: str, country: str | None = None) -> str:
-    parts = [name]
-    if city:
-        parts.append(city)
+def _hotel_search_url(name: str, city: str, country: str | None = None) -> str:
+    """Build a search URL that surfaces booking sites (Booking.com, Expedia, etc.)."""
+    parts = [name, city]
     if country:
         parts.append(country)
-    q = " ".join(parts)
+    parts.append("book")
+    q = " ".join(p for p in parts if p)
     return f"https://www.google.com/search?q={quote_plus(q)}"
 
 
@@ -38,12 +38,14 @@ def recommend_hotels(state):
     hotels_sorted = sorted(hotels, key=score)
     top_hotels = hotels_sorted[:5]
 
-    # Ensure each has a real, clickable URL
+    # Ensure each has a real, clickable URL (preserve Google Maps URL from Places API)
     for h in top_hotels:
-        name = h.get("name") or ""
-        city = h.get("city") or state.destination
-        country = h.get("country") or ""
-        h["url"] = _google_hotel_search_url(name, city, country)
+        url = h.get("url") or ""
+        if not url or "google.com/maps" not in url:
+            name = h.get("name") or ""
+            city = h.get("city") or state.destination
+            country = h.get("country") or ""
+            h["url"] = _hotel_search_url(name, city, country)
 
     state.recommended_hotels = top_hotels
     return state

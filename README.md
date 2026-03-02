@@ -72,7 +72,8 @@ These names match what the code reads (`agents/*`, `database/*`):
   - `OPENAI_API_KEY`: used by `agents/search_agent.py`
 - **Optional**
   - `OPENAI_CHAT_MODEL`: defaults to `gpt-4.1-mini`
-  - `AVIATIONSTACK_API_KEY`: enables the AviationStack enrichment path in `agents/flight_api_agent.py`
+  - `GOOGLE_PLACES_API_KEY` (or `GOOGLE_MAPS_API_KEY`): real hotel data with photos & ratings from [Google Places](https://developers.google.com/maps/documentation/places)
+  - `AVIATION_EDGE_API_KEY` (or `AVIATIONSTACK_API_KEY`): real flight data from [Aviation Edge](https://aviation-edge.com/developers)
   - `S2_HOST`, `S2_USER`, `S2_PASSWORD`, `S2_DB`: enables SingleStore caching (`database/cache.py`, `database/store_results.py`)
 
 Use `.env.example` as a template:
@@ -151,4 +152,5 @@ docker-compose up --build
 - `graph.py`: workflow wiring (nodes + edges)
 - `state.py`: `TravelState` schema passed between agents
 - `agents/`: weather, LLM “live search”, recommendation, flight enrichment
+  - `agents/places_client.py`: Google Places hotel search (photos/ratings/Maps links)
 - `database/`: SingleStore connector + cache read/write

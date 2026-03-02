@@ -2,18 +2,29 @@ import json
 import os
 from openai import OpenAI
 
+from agents.places_client import fetch_hotels_from_places
+
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 
 def live_search(state):
     """
-    Use OpenAI Chat Completions to generate accommodations + flights
-    consistent with the user's inputs.
-
-    - No hard-coded results.
-    - Prints raw LLM output for debugging.
-    - Tries to be flexible if the model nests or renames keys.
+    Fetch accommodations (hotels) and flights.
+    - Hotels: Google Places API when GOOGLE_PLACES_API_KEY is set, else LLM.
+    - Flights: LLM (enriched later by Aviation Edge).
     """
+    accommodations_from_places = []
+
+    if os.getenv("GOOGLE_PLACES_API_KEY") or os.getenv("GOOGLE_MAPS_API_KEY"):
+        accommodations_from_places = fetch_hotels_from_places(
+            destination=state.destination or "",
+            max_price_per_night=state.max_price_per_night,
+            min_rating=state.min_rating,
+            bedrooms=state.bedrooms or 1,
+            limit=10,
+        )
+
+    # LLM for flights (and hotels when Places not used)
     system_prompt = """
 You are a travel planning AI. You help users find hotels and flights.
 
@@ -48,7 +59,8 @@ Rules:
 - Return 3–7 accommodations.
 - Return 2–5 flights.
 - Try to respect user constraints (max price, min rating, bedrooms, route).
-- Use realistic-sounding hotel names and airlines, but you may approximate.
+- Use realistic hotel names and airlines for the destination.
+- For hotel prices: use approximate USD per-night rates typical for that city and star level. Stay within the user's max_price when provided. Prefer conservative estimates (slightly lower than typical) since users will verify on booking sites.
     """.strip()
 
     user_prompt = f"""
@@ -127,12 +139,13 @@ Do NOT include any additional keys, text, or markdown.
         if not isinstance(flights, list):
             flights = []
 
-        state.accommodations = accommodations
+        # Use Google Places hotels when available; else LLM
+        state.accommodations = accommodations_from_places if accommodations_from_places else accommodations
         state.flights = flights
         return state
 
     except Exception as e:
-        print("[Warning] live_search error, leaving results empty:", repr(e))
-        state.accommodations = []
+        print("[Warning] live_search error:", repr(e))
+        state.accommodations = accommodations_from_places if accommodations_from_places else []
         state.flights = []
         return state

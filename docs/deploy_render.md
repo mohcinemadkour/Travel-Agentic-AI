@@ -18,6 +18,7 @@ Steps
    - Add any required secrets (OpenAI key, SingleStore credentials) in Render's Environment section. Do NOT commit secrets to the repo.
    - The app reads `.env` locally; on Render, add keys as environment variables with the same names (e.g., `OPENAI_API_KEY`, `S2_HOST`, `S2_USER`, `S2_PASSWORD`, `S2_DB`).
 
+
 4. Port handling
    - Render provides the `$PORT` environment variable. The project's `Dockerfile` uses `$PORT` at runtime, so no extra configuration is normally required.
 

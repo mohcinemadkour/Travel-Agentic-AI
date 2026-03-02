@@ -54,7 +54,8 @@ Common variables:
 
 - `OPENAI_API_KEY` (required)
 - `OPENAI_CHAT_MODEL` (optional)
-- `AVIATIONSTACK_API_KEY` (optional)
+- `GOOGLE_PLACES_API_KEY` / `GOOGLE_MAPS_API_KEY` (optional; enables Google Places + Geocoding for real hotel data)
+- `AVIATION_EDGE_API_KEY` (optional; enables Aviation Edge routes enrichment for flights; also supports legacy `AVIATIONSTACK_API_KEY`)
 - `S2_HOST`, `S2_USER`, `S2_PASSWORD`, `S2_DB` (optional)
 
 5) Verifying the app

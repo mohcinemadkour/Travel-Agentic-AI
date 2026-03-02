@@ -5,3 +5,8 @@
 - `deploy.md`: general deployment options (Streamlit Cloud / Docker)
 - `deploy_render.md`: deploy to Render using `Dockerfile`
 
+Key integrations documented in `README.md`:
+
+- Google Places: real hotels (photos/ratings/Maps links) via `agents/places_client.py`
+- Aviation Edge: real flight routes enrichment via `agents/flight_api_agent.py`
+
