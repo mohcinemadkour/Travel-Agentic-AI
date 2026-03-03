@@ -116,9 +116,12 @@ def _normalize_airline(name: str) -> str:
 
 
 def _ensure_flight_urls(state, origin_iata: str, dest_iata: str) -> None:
-    """Ensure every flight has a URL that directs to that specific flight (airline + route + dates)."""
+    """Ensure every flight has a URL. Preserve existing booking deeplinks (e.g. from FlightAPI)."""
     flights = state.flights or []
     for f in flights:
+        existing = (f.get("url") or "").strip()
+        if existing and existing.startswith("http"):
+            continue  # already has a valid booking link (e.g. from FlightAPI deeplink)
         o = (f.get("origin") or origin_iata).upper()
         d = (f.get("destination") or dest_iata).upper()
         airline = f.get("airline") or ""
@@ -196,7 +199,26 @@ def fetch_flights_from_api(state):
         _ensure_flight_urls(state, origin_iata or "XXX", dest_iata or "XXX")
         return state
 
-    # Duffel: real flight prices when key + dates available
+    # FlightAPI: real flight prices when key + dates available
+    if os.getenv("FLIGHTAPI_API_KEY") and state.start_date:
+        try:
+            from agents.flightapi_client import fetch_flights_from_flightapi
+
+            flightapi_flights = fetch_flights_from_flightapi(
+                origin_iata=origin_iata,
+                dest_iata=dest_iata,
+                departure_date=state.start_date,
+                return_date=state.end_date,
+                adults=1,
+            )
+            if flightapi_flights:
+                state.flights = flightapi_flights
+                _ensure_flight_urls(state, origin_iata, dest_iata)
+                return state
+        except Exception as e:
+            print(f"[Info] FlightAPI: {e!r} (falling back to Aviation Edge)")
+
+    # Duffel: fallback when DUFFEL_API_KEY set (legacy)
     if os.getenv("DUFFEL_API_KEY") and state.start_date:
         try:
             from agents.duffel_client import fetch_flights_from_duffel

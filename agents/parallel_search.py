@@ -41,6 +41,28 @@ def _fill_flight_prices_from_llm(api_flights: list, llm_flights: list) -> None:
                 break
 
 
+def _fill_llm_price_column(api_flights: list, llm_flights: list) -> None:
+    """Attach the LLM estimated price as a separate field for comparison."""
+    if not llm_flights:
+        return
+    for f in api_flights:
+        o = (f.get("origin") or "").upper()
+        d = (f.get("destination") or "").upper()
+        an = _normalize_airline(f.get("airline") or "")
+        for llm in llm_flights:
+            if an != _normalize_airline(llm.get("airline") or ""):
+                continue
+            if (llm.get("origin") or "").upper() != o or (llm.get("destination") or "").upper() != d:
+                continue
+            price = llm.get("price")
+            if price is not None:
+                try:
+                    f["llm_price"] = float(price)
+                except (TypeError, ValueError):
+                    pass
+                break
+
+
 def parallel_search(state):
     """
     Run live_search (hotels + LLM flights) and fetch_flights_from_api (Duffel/Aviation Edge)
@@ -65,9 +87,16 @@ def parallel_search(state):
         result_flights = future_flights.result()
 
     state.accommodations = result_hotels.accommodations or []
+    llm_flights = result_hotels.flights or []
     if result_flights.flights:
         state.flights = result_flights.flights
-        _fill_flight_prices_from_llm(state.flights, result_hotels.flights or [])
+        # Tag each flight with its API price source, and attach LLM estimate for comparison
+        for f in state.flights:
+            f["api_price"] = f.get("price")  # real price from FlightAPI/Duffel/etc.
+        _fill_llm_price_column(state.flights, llm_flights)
+        _fill_flight_prices_from_llm(state.flights, llm_flights)
     else:
-        state.flights = result_hotels.flights or []
+        state.flights = llm_flights
+        for f in state.flights:
+            f["llm_price"] = f.get("price")
     return state

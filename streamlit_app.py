@@ -165,12 +165,19 @@ def main():
                             if end:
                                 p.append(f"return_date={end}")
                             url += "?" + "&".join(p)
-                    price = f.get("price")
                     currency = f.get("total_currency") or "USD"
+
+                    api_price = f.get("api_price")
+                    llm_price = f.get("llm_price")
+                    best_price = api_price if api_price is not None else (llm_price if llm_price is not None else f.get("price"))
                     try:
-                        price_str = f"{currency} {float(price):.0f}" if price is not None else "—"
+                        price_str = f"{currency} {float(best_price):.0f}" if best_price is not None else "—"
                     except (TypeError, ValueError):
                         price_str = "—"
+                    source = "API" if api_price is not None else ("est." if llm_price is not None else "")
+                    if source and price_str != "—":
+                        price_str = f"{price_str} ({source})"
+
                     flights_data.append({
                         "airline": f.get("airline"),
                         "origin": f.get("origin"),
@@ -183,7 +190,7 @@ def main():
                 st.dataframe(
                     flights_df,
                     use_container_width=True,
-                    height=300,
+                    height=600,
                     column_config={
                         "url": st.column_config.LinkColumn("Links", display_text="Book"),
                     },

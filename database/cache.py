@@ -41,7 +41,9 @@ def check_cache(state):
     hotel_rows = cur.fetchall()
     hotels = [dict(zip(hotel_cols, r)) for r in hotel_rows]
 
-    # Flights for origin + destination
+    # Flights for origin + destination (match IATA codes or user input)
+    origin_upper = (state.origin or "").strip().upper()
+    dest_upper = (state.destination or "").strip().upper()
     cur.execute("""
         SELECT
             airline,
@@ -50,14 +52,15 @@ def check_cache(state):
             price,
             url
         FROM flights
-        WHERE origin = %s AND destination = %s
-        LIMIT 10
-    """, (state.origin, state.destination))
+        WHERE (UPPER(origin) = %s OR UPPER(origin) = %s)
+          AND (UPPER(destination) = %s OR UPPER(destination) = %s)
+        LIMIT 20
+    """, (origin_upper, state.origin, dest_upper, state.destination))
     flight_cols = [col[0] for col in cur.description]
     flight_rows = cur.fetchall()
     flights = [dict(zip(flight_cols, r)) for r in flight_rows]
 
-    if len(hotels) > 0 and len(flights) > 0:
+    if len(hotels) > 0 and len(flights) >= 3:
         state.accommodations = hotels
         state.flights = flights
         return state

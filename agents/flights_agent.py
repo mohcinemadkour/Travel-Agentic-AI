@@ -25,6 +25,5 @@ def recommend_flights(state):
             return 9_999_999.0
 
     flights_sorted = sorted(flights, key=price_value)
-    # Keep only top 5 cheapest
-    state.flights = flights_sorted[:5]
+    state.flights = flights_sorted
     return state
