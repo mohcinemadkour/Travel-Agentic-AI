@@ -9,6 +9,8 @@ import streamlit as st
 
 from graph import build_graph
 from state import TravelState
+from agents.flight_api_agent import fetch_flights_from_api
+from agents.flights_agent import recommend_flights
 
 
 def run_workflow(origin, destination, start_date, end_date, bedrooms, max_price, min_rating):
@@ -29,6 +31,23 @@ def run_workflow(origin, destination, start_date, end_date, bedrooms, max_price,
     if isinstance(final_state, TravelState):
         final_state = final_state.model_dump()
 
+    return final_state
+
+
+def refresh_flights_only(final_state: dict) -> dict:
+    """Re-fetch flights only, keeping hotels and weather unchanged."""
+    state = TravelState(
+        origin=final_state.get("origin"),
+        destination=final_state.get("destination"),
+        start_date=final_state.get("start_date"),
+        end_date=final_state.get("end_date"),
+        accommodations=final_state.get("accommodations", []),
+        recommended_hotels=final_state.get("recommended_hotels", []),
+        weather_summary=final_state.get("weather_summary"),
+    )
+    state = fetch_flights_from_api(state)
+    state = recommend_flights(state)
+    final_state["flights"] = state.flights or []
     return final_state
 
 
@@ -71,18 +90,27 @@ def main():
                 st.warning("Workflow returned no results.")
                 return
 
-            weather_summary = final_state.get("weather_summary")
-            recommended_hotels = final_state.get("recommended_hotels", [])
-            flights = final_state.get("flights", [])
+            st.session_state["travel_results"] = final_state
+        except Exception as e:
+            st.error(f"Workflow error: {e}")
+            st.exception(traceback.format_exc())
+            return
 
-            st.subheader("Weather")
-            if weather_summary:
-                st.write(weather_summary)
-            else:
-                st.write("No weather summary available.")
+    # Display results from session (persists after form submit and across refresh)
+    final_state = st.session_state.get("travel_results")
+    if final_state:
+        weather_summary = final_state.get("weather_summary")
+        recommended_hotels = final_state.get("recommended_hotels", [])
+        flights = final_state.get("flights", [])
 
-            st.subheader("Top Hotels")
-            if recommended_hotels:
+        st.subheader("Weather")
+        if weather_summary:
+            st.write(weather_summary)
+        else:
+            st.write("No weather summary available.")
+
+        st.subheader("Top Hotels")
+        if recommended_hotels:
                 # Show hotels with photos when available (from Google Places)
                 has_photos = any(h.get("photo_url") for h in recommended_hotels)
                 if has_photos:
@@ -142,66 +170,69 @@ def main():
                         },
                         hide_index=True,
                     )
-            else:
-                st.write("No hotel recommendations found.")
+        else:
+            st.write("No hotel recommendations found.")
 
+        col_title, col_btn = st.columns([3, 1])
+        with col_title:
             st.subheader("Top Flights")
-            if flights:
-                flights_data = []
-                for f in flights:
-                    url = (f.get("url") or "").strip()
-                    if not url or not url.startswith("http"):
-                        def _slug(s):
-                            return (s or "").strip().lower().replace(" ", "-")[:50] or "xxx"
-                        o = _slug(f.get("origin"))
-                        d = _slug(f.get("destination"))
-                        start = final_state.get("start_date")
-                        end = final_state.get("end_date")
-                        url = f"https://www.google.com/travel/flights/flights-from-{o}-to-{d}.html"
-                        if start or end:
-                            p = []
-                            if start:
-                                p.append(f"outbound_date={start}")
-                            if end:
-                                p.append(f"return_date={end}")
-                            url += "?" + "&".join(p)
-                    currency = f.get("total_currency") or "USD"
+        with col_btn:
+            if st.button("Refresh flights", key="refresh_flights"):
+                with st.spinner("Refreshing flights..."):
+                    st.session_state["travel_results"] = refresh_flights_only(final_state)
+                st.rerun()
+        if flights:
+            flights_data = []
+            for f in flights:
+                url = (f.get("url") or "").strip()
+                if not url or not url.startswith("http"):
+                    def _slug(s):
+                        return (s or "").strip().lower().replace(" ", "-")[:50] or "xxx"
+                    o = _slug(f.get("origin"))
+                    d = _slug(f.get("destination"))
+                    start = final_state.get("start_date")
+                    end = final_state.get("end_date")
+                    url = f"https://www.google.com/travel/flights/flights-from-{o}-to-{d}.html"
+                    if start or end:
+                        p = []
+                        if start:
+                            p.append(f"outbound_date={start}")
+                        if end:
+                            p.append(f"return_date={end}")
+                        url += "?" + "&".join(p)
+                currency = f.get("total_currency") or "USD"
 
-                    api_price = f.get("api_price")
-                    llm_price = f.get("llm_price")
-                    best_price = api_price if api_price is not None else (llm_price if llm_price is not None else f.get("price"))
-                    try:
-                        price_str = f"{currency} {float(best_price):.0f}" if best_price is not None else "—"
-                    except (TypeError, ValueError):
-                        price_str = "—"
-                    source = "API" if api_price is not None else ("est." if llm_price is not None else "")
-                    if source and price_str != "—":
-                        price_str = f"{price_str} ({source})"
+                api_price = f.get("api_price")
+                llm_price = f.get("llm_price")
+                best_price = api_price if api_price is not None else (llm_price if llm_price is not None else f.get("price"))
+                try:
+                    price_str = f"{currency} {float(best_price):.0f}" if best_price is not None else "—"
+                except (TypeError, ValueError):
+                    price_str = "—"
+                source = "API" if api_price is not None else ("est." if llm_price is not None else "")
+                if source and price_str != "—":
+                    price_str = f"{price_str} ({source})"
 
-                    flights_data.append({
-                        "airline": f.get("airline"),
-                        "origin": f.get("origin"),
-                        "destination": f.get("destination"),
-                        "price": price_str,
-                        "url": url,
-                    })
+                flights_data.append({
+                    "airline": f.get("airline"),
+                    "origin": f.get("origin"),
+                    "destination": f.get("destination"),
+                    "price": price_str,
+                    "url": url,
+                })
 
-                flights_df = pd.DataFrame(flights_data)
-                st.dataframe(
-                    flights_df,
-                    use_container_width=True,
-                    height=600,
-                    column_config={
-                        "url": st.column_config.LinkColumn("Links", display_text="Book"),
-                    },
-                    hide_index=True,
-                )
-            else:
-                st.write("No flight options found.")
-
-        except Exception as e:
-            st.error(f"Workflow error: {e}")
-            st.exception(traceback.format_exc())
+            flights_df = pd.DataFrame(flights_data)
+            st.dataframe(
+                flights_df,
+                use_container_width=True,
+                height=600,
+                column_config={
+                    "url": st.column_config.LinkColumn("Links", display_text="Book"),
+                },
+                hide_index=True,
+            )
+        else:
+            st.write("No flight options found.")
 
 
 if __name__ == "__main__":
