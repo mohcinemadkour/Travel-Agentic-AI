@@ -4,6 +4,7 @@ Uses roundtrip or oneway endpoint with real-time pricing.
 """
 
 import os
+import time
 import requests
 
 
@@ -69,6 +70,10 @@ def fetch_flights_from_flightapi(
         if r.status_code == 403:
             print("[Warning] FlightAPI: API quota exceeded. Upgrade plan or wait for reset.")
             return []
+        if r.status_code == 400:
+            # FlightAPI sometimes returns 400 for transient server errors; retry once
+            time.sleep(2)
+            r = requests.get(url, timeout=60)
         r.raise_for_status()
         data = r.json()
     except Exception as e:
