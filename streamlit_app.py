@@ -138,7 +138,6 @@ def main():
                             st.markdown(f"**#{rank} {name}**")
                             st.caption(f"⭐ {rating}  ·  {f'${price:.0f}/night' if price else '—'}  ·  [View on map]({map_url})  |  [Book]({url})")
                         st.divider()
-                    st.caption("Prices are estimates from Google; verify on booking sites.")
                 else:
                     hotels_data = []
                     for i, h in enumerate(recommended_hotels, 1):
@@ -181,6 +180,7 @@ def main():
                 with st.spinner("Refreshing flights..."):
                     st.session_state["travel_results"] = refresh_flights_only(final_state)
                 st.rerun()
+        st.caption("Use Refresh flights to re-run the flight fetch (FlightAPI/Duffel/Aviation Edge).")
         if flights:
             flights_data = []
             for f in flights:
