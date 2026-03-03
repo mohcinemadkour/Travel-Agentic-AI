@@ -151,19 +151,31 @@ def main():
                 for f in flights:
                     url = (f.get("url") or "").strip()
                     if not url or not url.startswith("http"):
-                        o, d = (f.get("origin") or "XXX").upper()[:3], (f.get("destination") or "XXX").upper()[:3]
-                        url = f"https://www.google.com/travel/flights/flights-from-{o.lower()}-to-{d.lower()}.html"
+                        def _slug(s):
+                            return (s or "").strip().lower().replace(" ", "-")[:50] or "xxx"
+                        o = _slug(f.get("origin"))
+                        d = _slug(f.get("destination"))
+                        start = final_state.get("start_date")
+                        end = final_state.get("end_date")
+                        url = f"https://www.google.com/travel/flights/flights-from-{o}-to-{d}.html"
+                        if start or end:
+                            p = []
+                            if start:
+                                p.append(f"outbound_date={start}")
+                            if end:
+                                p.append(f"return_date={end}")
+                            url += "?" + "&".join(p)
                     price = f.get("price")
                     currency = f.get("total_currency") or "USD"
                     try:
-                        price_str = f"{currency} {float(price):.0f}" if price is not None else None
+                        price_str = f"{currency} {float(price):.0f}" if price is not None else "—"
                     except (TypeError, ValueError):
-                        price_str = price
+                        price_str = "—"
                     flights_data.append({
                         "airline": f.get("airline"),
                         "origin": f.get("origin"),
                         "destination": f.get("destination"),
-                        "price": price_str or price,
+                        "price": price_str,
                         "url": url,
                     })
 
@@ -173,7 +185,7 @@ def main():
                     use_container_width=True,
                     height=300,
                     column_config={
-                        "url": st.column_config.LinkColumn("Links", display_text="Search flights"),
+                        "url": st.column_config.LinkColumn("Links", display_text="Book"),
                     },
                     hide_index=True,
                 )

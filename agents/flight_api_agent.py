@@ -41,21 +41,55 @@ def _city_to_iata(city: str) -> str:
 
 
 def _google_flights_url(origin: str, dest: str, start: str | None, end: str | None) -> str:
-    """Build Google Flights URL that pre-fills route and shows results."""
-    o = (origin or "").upper().strip()[:3]
-    d = (dest or "").upper().strip()[:3]
-    if not o or not d:
+    """Build Google Flights URL (travel path) with route and optional dates."""
+    # Use path format: /travel/flights/flights-from-{origin}-to-{destination}.html
+    # Origin/dest can be IATA (BLR, BOM) or city names; use lowercase, hyphens for spaces
+    def slug(s: str) -> str:
+        if not s:
+            return ""
+        return s.strip().lower().replace(" ", "-")[:50]
+
+    o = slug(origin or "") or "xxx"
+    d = slug(dest or "") or "xxx"
+    if o == "xxx" or d == "xxx":
         return "https://www.google.com/travel/flights"
-    base = f"https://www.google.com/travel/flights/flights-from-{o.lower()}-to-{d.lower()}.html"
-    if start or end:
-        params = []
-        if start:
-            params.append(f"outbound_date={start}")
-        if end:
-            params.append(f"return_date={end}")
-        if params:
-            base += "?" + "&".join(params)
+    base = f"https://www.google.com/travel/flights/flights-from-{o}-to-{d}.html"
+    params = []
+    if start:
+        params.append(f"outbound_date={start}")
+    if end:
+        params.append(f"return_date={end}")
+    if params:
+        base += "?" + "&".join(params)
     return base
+
+
+# Airline name (normalized key) -> direct booking URL
+AIRLINE_BOOKING_URLS = {
+    "americanairlines": "https://www.aa.com/booking/find-flights",
+    "delta": "https://www.delta.com/flight-search",
+    "united": "https://www.united.com/en/us/fsr/choose-flights",
+    "indigo": "https://www.goindigo.in/flight-booking.html",
+    "airindia": "https://www.airindia.com/in/en/book.html",
+    "spicejet": "https://www.spicejet.com/",
+    "vistara": "https://www.airvistara.com/in/en/book",
+    "emirates": "https://www.emirates.com/",
+    "singaporeairlines": "https://www.singaporeair.com/",
+    "qatarairways": "https://www.qatarairways.com/",
+    "lufthansa": "https://www.lufthansa.com/",
+    "britishairways": "https://www.britishairways.com/",
+    "airasia": "https://www.airasia.com/",
+    "jetairways": "https://www.jetairways.com/",
+    "gofirst": "https://www.flygofirst.com/",
+}
+
+
+def _airline_direct_booking_url(airline: str) -> str | None:
+    """Return airline direct booking URL if known."""
+    if not airline:
+        return None
+    key = _normalize_airline(airline)
+    return AIRLINE_BOOKING_URLS.get(key)
 
 
 def _flight_url_for_display(
@@ -66,29 +100,11 @@ def _flight_url_for_display(
     end: str | None,
 ) -> str:
     """
-    Build URL that directs to the specific flight (airline + route + dates).
-    Uses Google search for "{airline} flights {origin} to {dest} {dates}"
-    which surfaces a Flights onebox linking to that airline's options.
+    Prefer direct airline booking URL when airline is known; else Google Flights with route/dates.
     """
-    from urllib.parse import quote_plus
-
-    o = (origin or "").upper().strip()[:3]
-    d = (dest or "").upper().strip()[:3]
-    if not o or not d:
-        return _google_flights_url(origin, dest, start, end)
-
-    airline_clean = (airline or "").strip().lower()
-
-    # Google search for "{airline} flights {origin} to {dest} {dates}" surfaces
-    # a Flights onebox that links to that airline's options for the route
-    if airline_clean:
-        q_parts = [(airline or "").strip(), "flights", o, "to", d]
-        if start:
-            q_parts.append(start)
-        if end:
-            q_parts.append(end)
-        q = " ".join(str(p) for p in q_parts if p)
-        return f"https://www.google.com/search?q={quote_plus(q)}"
+    direct = _airline_direct_booking_url(airline)
+    if direct:
+        return direct
     return _google_flights_url(origin, dest, start, end)
 
 

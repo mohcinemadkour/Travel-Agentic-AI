@@ -9,20 +9,24 @@ import requests
 
 
 def _google_flights_url(origin: str, dest: str, start: str | None, end: str | None) -> str:
-    """Build Google Flights URL that pre-fills route and shows flight options."""
-    o = (origin or "").upper().strip()[:3]
-    d = (dest or "").upper().strip()[:3]
-    if not o or not d:
+    """Build Google Flights URL (travel path) with route and optional dates."""
+    def slug(s: str) -> str:
+        if not s:
+            return ""
+        return s.strip().lower().replace(" ", "-")[:50]
+
+    o = slug(origin or "") or "xxx"
+    d = slug(dest or "") or "xxx"
+    if o == "xxx" or d == "xxx":
         return "https://www.google.com/travel/flights"
-    base = f"https://www.google.com/travel/flights/flights-from-{o.lower()}-to-{d.lower()}.html"
-    if start or end:
-        params = []
-        if start:
-            params.append(f"outbound_date={start}")
-        if end:
-            params.append(f"return_date={end}")
-        if params:
-            base += "?" + "&".join(params)
+    base = f"https://www.google.com/travel/flights/flights-from-{o}-to-{d}.html"
+    params = []
+    if start:
+        params.append(f"outbound_date={start}")
+    if end:
+        params.append(f"return_date={end}")
+    if params:
+        base += "?" + "&".join(params)
     return base
 
 
@@ -115,6 +119,8 @@ def fetch_flights_from_duffel(
             continue
         seen.add(key)
 
+        # Keep origin/dest as the user's requested route (don't overwrite from segments;
+        # otherwise connecting flights would show first leg only, e.g. Dallas instead of JFK)
         # Extract times from first segment
         for sl in offer.get("slices") or []:
             for seg in sl.get("segments") or []:
@@ -122,10 +128,6 @@ def fetch_flights_from_duffel(
                 arr_time = arr_time or seg.get("arriving_at", "")
                 if not airline and seg.get("operating_carrier"):
                     airline = (seg.get("operating_carrier") or {}).get("name") or ""
-                if seg.get("origin", {}).get("iata_code"):
-                    origin = seg["origin"]["iata_code"]
-                if seg.get("destination", {}).get("iata_code"):
-                    dest = seg["destination"]["iata_code"]
                 break
             if dep_time:
                 break
