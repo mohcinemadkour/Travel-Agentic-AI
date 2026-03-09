@@ -1,16 +1,14 @@
+import os
 import traceback
 from urllib.parse import quote_plus
 
 from dotenv import load_dotenv
 load_dotenv()
 
-import pandas as pd
+import requests
 import streamlit as st
 
-from graph import build_graph
-from state import TravelState
-from agents.flight_api_agent import fetch_flights_from_api
-from agents.flights_agent import recommend_flights
+API_BASE = os.getenv("TRAVELTWIN_API_URL", "http://localhost:8000/api/v1")
 
 ASSISTANT_AVATAR = "https://api.dicebear.com/7.x/bottts-neutral/svg?seed=travel&backgroundColor=1e3a5f"
 
@@ -89,29 +87,6 @@ def _inject_css():
     .hotel-actions .book-btn { background: #1565c0; color: white; }
     .hotel-actions .book-btn:hover { background: #0d47a1; }
 
-    /* ── Flight row ───────────────────────────────── */
-    .flight-card {
-        background: #ffffff;
-        border: 1px solid #e8ecf1;
-        border-radius: 10px;
-        padding: 0.8rem 1.2rem;
-        margin-bottom: 0.5rem;
-        display: flex; align-items: center; justify-content: space-between;
-        transition: box-shadow 0.2s ease;
-    }
-    .flight-card:hover { box-shadow: 0 2px 12px rgba(0,0,0,0.06); }
-    .flight-airline { font-weight: 600; color: #1a1a2e; min-width: 160px; }
-    .flight-route { color: #666; font-size: 0.9rem; }
-    .flight-route .arrow { color: #1565c0; font-weight: 600; margin: 0 6px; }
-    .flight-price { font-weight: 700; color: #2e7d32; font-size: 1.05rem; min-width: 120px; text-align: right; }
-    .flight-price .src { font-weight: 400; font-size: 0.75rem; color: #888; }
-    .flight-book {
-        background: #1565c0; color: white !important; text-decoration: none;
-        padding: 6px 18px; border-radius: 20px; font-weight: 500; font-size: 0.85rem;
-        margin-left: 1rem; white-space: nowrap;
-    }
-    .flight-book:hover { background: #0d47a1; }
-
     /* ── Sidebar styling ─────────────────────────── */
     [data-testid="stSidebar"] {
         background: linear-gradient(180deg, #0f2027 0%, #203a43 100%);
@@ -157,7 +132,6 @@ def _inject_css():
 
     /* ── Misc ─────────────────────────────────────── */
     .empty-state { text-align: center; padding: 2rem; color: #999; font-size: 0.95rem; }
-    .refresh-hint { font-size: 0.8rem; color: #888; margin-top: 0.25rem; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -173,32 +147,22 @@ def _stars_html(rating):
 
 
 def run_workflow(origin, destination, start_date, end_date, bedrooms, max_price, min_rating):
-    graph = build_graph()
-    initial_state = TravelState(
-        origin=origin, destination=destination,
-        start_date=start_date, end_date=end_date,
-        bedrooms=bedrooms, max_price_per_night=max_price, min_rating=min_rating,
+    """Call the FastAPI /search endpoint."""
+    resp = requests.post(
+        f"{API_BASE}/search",
+        json={
+            "origin": origin,
+            "destination": destination,
+            "start_date": start_date,
+            "end_date": end_date,
+            "bedrooms": bedrooms,
+            "max_price_per_night": max_price,
+            "min_rating": min_rating,
+        },
+        timeout=120,
     )
-    final_state = graph.invoke(initial_state)
-    if isinstance(final_state, TravelState):
-        final_state = final_state.model_dump()
-    return final_state
-
-
-def refresh_flights_only(final_state: dict) -> dict:
-    state = TravelState(
-        origin=final_state.get("origin"),
-        destination=final_state.get("destination"),
-        start_date=final_state.get("start_date"),
-        end_date=final_state.get("end_date"),
-        accommodations=final_state.get("accommodations", []),
-        recommended_hotels=final_state.get("recommended_hotels", []),
-        weather_summary=final_state.get("weather_summary"),
-    )
-    state = fetch_flights_from_api(state)
-    state = recommend_flights(state)
-    final_state["flights"] = state.flights or []
-    return final_state
+    resp.raise_for_status()
+    return resp.json()
 
 
 def _build_hotel_html(rank, h, destination):
@@ -235,55 +199,15 @@ def _build_hotel_html(rank, h, destination):
     """
 
 
-def _build_flight_html(f, final_state):
-    url = (f.get("url") or "").strip()
-    if not url or not url.startswith("http"):
-        o_slug = (f.get("origin") or "").strip().lower().replace(" ", "-")[:50] or "xxx"
-        d_slug = (f.get("destination") or "").strip().lower().replace(" ", "-")[:50] or "xxx"
-        url = f"https://www.google.com/travel/flights/flights-from-{o_slug}-to-{d_slug}.html"
-        params = []
-        if final_state.get("start_date"):
-            params.append(f"outbound_date={final_state['start_date']}")
-        if final_state.get("end_date"):
-            params.append(f"return_date={final_state['end_date']}")
-        if params:
-            url += "?" + "&".join(params)
-
-    currency = f.get("total_currency") or "USD"
-    api_price = f.get("api_price")
-    llm_price = f.get("llm_price")
-    best = api_price if api_price is not None else (llm_price if llm_price is not None else f.get("price"))
-    try:
-        price_str = f"{currency} {float(best):.0f}" if best is not None else "—"
-    except (TypeError, ValueError):
-        price_str = "—"
-    src = "API" if api_price is not None else ("est." if llm_price is not None else "")
-    src_html = f'<span class="src">{src}</span>' if src and price_str != "—" else ""
-
-    airline = f.get("airline") or "—"
-    origin = f.get("origin") or ""
-    dest = f.get("destination") or ""
-
-    return f"""
-    <div class="flight-card">
-        <span class="flight-airline">{airline}</span>
-        <span class="flight-route">{origin}<span class="arrow">&rarr;</span>{dest}</span>
-        <span class="flight-price">{price_str} {src_html}</span>
-        <a class="flight-book" href="{url}" target="_blank">Book</a>
-    </div>
-    """
-
-
 def main():
     st.set_page_config(
         page_title="TravelTwin - AI Travel Assistant",
-        page_icon="✈️",
+        page_icon="🏨",
         layout="wide",
         initial_sidebar_state="expanded",
     )
     _inject_css()
 
-    # ── Sidebar: search form ────────────────────────
     with st.sidebar:
         st.markdown(f"""
         <div style="text-align:center;padding:1rem 0 0.5rem 0;">
@@ -300,23 +224,21 @@ def main():
             destination = st.text_input("To", placeholder="e.g. MCO, Paris, Tokyo")
             col_d1, col_d2 = st.columns(2)
             with col_d1:
-                start_date = st.date_input("Depart")
+                start_date = st.date_input("Check-in")
             with col_d2:
-                end_date = st.date_input("Return")
+                end_date = st.date_input("Check-out")
             bedrooms = st.number_input("Rooms", min_value=1, value=1)
             max_price = st.number_input("Max hotel $/night", min_value=0.0, value=200.0, step=10.0)
             min_rating = st.slider("Min rating", 0.0, 5.0, 4.0, 0.1)
             submitted = st.form_submit_button("Search", use_container_width=True)
 
-    # ── Hero ────────────────────────────────────────
     st.markdown("""
     <div class="hero">
         <h1>TravelTwin</h1>
-        <p>Your AI-powered digital twin for finding the best hotels and flights.</p>
+        <p>Your AI-powered digital twin for finding the best hotels.</p>
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Run workflow on submit ──────────────────────
     if submitted:
         if not origin or not destination:
             st.error("Please provide both origin and destination.")
@@ -339,7 +261,6 @@ def main():
             st.exception(traceback.format_exc())
             return
 
-    # ── Display results ─────────────────────────────
     final_state = st.session_state.get("travel_results")
 
     if not final_state:
@@ -347,18 +268,16 @@ def main():
         <div class="assistant-msg">
             Welcome! I'm <strong>TravelTwin</strong>, your personal travel assistant.
             Fill in your trip details in the sidebar and click <strong>Search</strong>
-            to find the best hotels and flights for your trip.
+            to find the best hotels for your trip.
         </div>
         """, unsafe_allow_html=True)
         return
 
     weather = final_state.get("weather_summary")
     hotels = final_state.get("recommended_hotels", [])
-    flights = final_state.get("flights", [])
     dest = final_state.get("destination", "")
     orig = final_state.get("origin", "")
 
-    # Trip summary
     st.markdown(f"""
     <div class="assistant-msg">
         Here are the best options I found for <strong>{orig}</strong> &rarr; <strong>{dest}</strong>
@@ -366,12 +285,10 @@ def main():
     </div>
     """, unsafe_allow_html=True)
 
-    # ── Weather ─────────────────────────────────────
     if weather:
         st.markdown('<div class="section-hdr"><span class="icon">🌤️</span><span class="title">Weather Forecast</span></div>', unsafe_allow_html=True)
         st.markdown(f'<div class="weather-card">{weather}</div>', unsafe_allow_html=True)
 
-    # ── Hotels ──────────────────────────────────────
     st.markdown('<div class="section-hdr"><span class="icon">🏨</span><span class="title">Top Hotels</span></div>', unsafe_allow_html=True)
     if hotels:
         cols = st.columns(min(len(hotels), 3))
@@ -380,23 +297,6 @@ def main():
                 st.markdown(_build_hotel_html(i + 1, h, dest), unsafe_allow_html=True)
     else:
         st.markdown('<div class="empty-state">No hotel recommendations found.</div>', unsafe_allow_html=True)
-
-    # ── Flights ─────────────────────────────────────
-    st.markdown('<div class="section-hdr"><span class="icon">✈️</span><span class="title">Top Flights</span></div>', unsafe_allow_html=True)
-    col_hint, col_refresh = st.columns([4, 1])
-    with col_hint:
-        st.markdown('<p class="refresh-hint">Click Refresh to re-fetch live prices from FlightAPI / Duffel / Aviation Edge.</p>', unsafe_allow_html=True)
-    with col_refresh:
-        if st.button("Refresh flights", key="refresh_flights", use_container_width=True):
-            with st.spinner("Refreshing flights..."):
-                st.session_state["travel_results"] = refresh_flights_only(final_state)
-            st.rerun()
-
-    if flights:
-        for f in flights:
-            st.markdown(_build_flight_html(f, final_state), unsafe_allow_html=True)
-    else:
-        st.markdown('<div class="empty-state">No flight options found.</div>', unsafe_allow_html=True)
 
 
 if __name__ == "__main__":

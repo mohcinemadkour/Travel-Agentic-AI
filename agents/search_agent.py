@@ -11,13 +11,11 @@ client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 def live_search(state):
     """
-    Fetch accommodations (hotels) and flights.
-    - Hotels: SerpAPI (real prices) > Google Places > LLM.
-    - Flights: LLM (enriched later by Aviation Edge).
+    Fetch accommodations (hotels).
+    Hotels: SerpAPI (real prices) > Google Places > LLM.
     """
     accommodations_from_api = []
     destination = (state.destination or "").strip()
-    # Resolve airport codes (e.g. BOM) to city names (e.g. Mumbai) for hotel search
     hotel_destination = resolve_destination_for_hotels(destination) if destination else ""
 
     if hotel_destination and os.getenv("SERPAPI_API_KEY") and state.start_date and state.end_date:
@@ -39,12 +37,15 @@ def live_search(state):
             limit=10,
         )
 
-    # LLM for flights (and hotels when neither SerpAPI nor Places used)
+    if accommodations_from_api:
+        state.accommodations = accommodations_from_api
+        return state
+
     system_prompt = """
-You are a travel planning AI. You help users find hotels and flights.
+You are a travel planning AI. You help users find hotels.
 
 You MUST respond with STRICT JSON only. No markdown, no explanations, no comments.
-The JSON MUST have this exact structure (field names should ideally match):
+The JSON MUST have this exact structure:
 
 {
   "accommodations": [
@@ -57,24 +58,14 @@ The JSON MUST have this exact structure (field names should ideally match):
       "bedrooms": 1,
       "url": "https://..."
     }
-  ],
-  "flights": [
-    {
-      "airline": "string",
-      "origin": "string",
-      "destination": "string",
-      "price": 450.0,
-      "url": "https://..."
-    }
   ]
 }
 
 Rules:
 - All numbers must be valid JSON numbers (no commas in thousands, e.g. 1565.0 not 1,565.0).
 - Return 3–7 accommodations.
-- Return 2–5 flights.
-- Try to respect user constraints (max price, min rating, bedrooms, route).
-- Use realistic hotel names and airlines for the destination.
+- Try to respect user constraints (max price, min rating, bedrooms).
+- Use realistic hotel names for the destination.
 - For hotel prices: use approximate USD per-night rates typical for that city and star level. Stay within the user's max_price when provided. Prefer conservative estimates (slightly lower than typical) since users will verify on booking sites.
     """.strip()
 
@@ -87,12 +78,8 @@ User trip details:
 - Bedrooms needed: {state.bedrooms}
 - Max hotel price per night: {state.max_price_per_night}
 - Minimum hotel rating: {state.min_rating}
-"""
-    if state.max_flight_price is not None:
-        user_prompt += f"- Max flight price: {state.max_flight_price}\n"
 
-    user_prompt += """
-Generate hotels and flights that match these constraints as much as possible.
+Generate hotels that match these constraints as much as possible.
 
 Return ONLY the JSON object as specified in the system message.
 Do NOT include any additional keys, text, or markdown.
@@ -114,7 +101,6 @@ Do NOT include any additional keys, text, or markdown.
         print(content)
         print("--- END RAW LLM OUTPUT ---\n")
 
-        # Strip ```json fences if present
         if content.startswith("```"):
             parts = content.split("```")
             if len(parts) >= 3:
@@ -128,8 +114,7 @@ Do NOT include any additional keys, text, or markdown.
 
         data = json.loads(cleaned)
 
-        # If nested under "result"/"data"/"response"
-        if isinstance(data, dict) and "accommodations" not in data and "flights" not in data:
+        if isinstance(data, dict) and "accommodations" not in data:
             for key in ["result", "data", "response"]:
                 if isinstance(data.get(key), dict):
                     data = data[key]
@@ -142,25 +127,13 @@ Do NOT include any additional keys, text, or markdown.
             or []
         )
 
-        flights = (
-            data.get("flights")
-            or data.get("flight_options")
-            or data.get("routes")
-            or []
-        )
-
         if not isinstance(accommodations, list):
             accommodations = []
-        if not isinstance(flights, list):
-            flights = []
 
-        # Use SerpAPI/Places hotels when available; else LLM
-        state.accommodations = accommodations_from_api if accommodations_from_api else accommodations
-        state.flights = flights
+        state.accommodations = accommodations
         return state
 
     except Exception as e:
         print("[Warning] live_search error:", repr(e))
-        state.accommodations = accommodations_from_api if accommodations_from_api else []
-        state.flights = []
+        state.accommodations = []
         return state

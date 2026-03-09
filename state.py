@@ -10,9 +10,7 @@ class TravelState(BaseModel):
     bedrooms: Optional[int] = 1
     max_price_per_night: Optional[float] = 200.0
     min_rating: Optional[float] = 4.0
-    max_flight_price: Optional[float] = None
 
     weather_summary: Optional[str] = None
     accommodations: List[Dict[str, Any]] = []
-    flights: List[Dict[str, Any]] = []
     recommended_hotels: List[Dict[str, Any]] = []

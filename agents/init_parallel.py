@@ -31,5 +31,4 @@ def init_parallel(state):
     state.weather_summary = result_weather.weather_summary
     if result_cache is not None:
         state.accommodations = result_cache.accommodations or []
-        state.flights = result_cache.flights or []
     return state

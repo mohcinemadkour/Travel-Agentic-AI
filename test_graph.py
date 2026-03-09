@@ -7,7 +7,7 @@ from state import TravelState
 
 def test():
     graph = build_graph()
-    
+
     initial_state = TravelState(
         origin="BLR",
         destination="Mumbai",
@@ -23,7 +23,7 @@ def test():
     if isinstance(final_state, TravelState):
         final_state = final_state.model_dump()
 
-    print("--- FINAL FLIGHTS ---")
-    print(final_state.get("flights"))
+    print("--- FINAL HOTELS ---")
+    print(final_state.get("recommended_hotels"))
 
 test()

@@ -3,14 +3,12 @@
 Resolve destination for hotel search.
 When user provides an airport code (e.g. BOM, BLR), resolve to city name
 so hotel APIs return relevant results.
-Uses airports.csv when available; falls back to Aviation Edge API or static mapping.
+Uses airports.csv / airport-codes.csv; falls back to a static mapping.
 """
 
 import csv
 import os
-import requests
 
-# Fallback when airports.csv not found (minimal set)
 _FALLBACK_IATA_TO_CITY = {
     "BOM": "Mumbai",
     "BLR": "Bengaluru",
@@ -31,17 +29,73 @@ _FALLBACK_IATA_TO_CITY = {
     "SYD": "Sydney",
     "LAX": "Los Angeles",
     "SFO": "San Francisco",
+    "MCO": "Orlando",
+    "ORD": "Chicago",
+    "ATL": "Atlanta",
+    "DFW": "Dallas",
+    "MIA": "Miami",
+    "SEA": "Seattle",
+    "DEN": "Denver",
+    "EWR": "Newark",
+    "LGA": "New York",
+    "FLL": "Fort Lauderdale",
+    "IAD": "Washington",
+    "DCA": "Washington",
+    "PHX": "Phoenix",
+    "MSP": "Minneapolis",
+    "DTW": "Detroit",
+    "PHL": "Philadelphia",
+    "BOS": "Boston",
+    "CLT": "Charlotte",
+    "SAN": "San Diego",
+    "TPA": "Tampa",
+    "IAH": "Houston",
+    "AUS": "Austin",
+    "PDX": "Portland",
+    "STL": "St. Louis",
+    "MCI": "Kansas City",
+    "RDU": "Raleigh",
+    "BNA": "Nashville",
+    "SLC": "Salt Lake City",
+    "CUN": "Cancún",
+    "MEX": "Mexico City",
+    "GRU": "São Paulo",
+    "EZE": "Buenos Aires",
+    "BOG": "Bogotá",
+    "LIM": "Lima",
+    "FCO": "Rome",
+    "AMS": "Amsterdam",
+    "FRA": "Frankfurt",
+    "MUC": "Munich",
+    "MAD": "Madrid",
+    "BCN": "Barcelona",
+    "IST": "Istanbul",
+    "DOH": "Doha",
+    "AUH": "Abu Dhabi",
+    "KUL": "Kuala Lumpur",
+    "MNL": "Manila",
+    "CGK": "Jakarta",
+    "PEK": "Beijing",
+    "PVG": "Shanghai",
+    "TPE": "Taipei",
+    "NBO": "Nairobi",
+    "JNB": "Johannesburg",
+    "CAI": "Cairo",
+    "CPT": "Cape Town",
 }
 
 
 def _load_iata_to_city_from_csv() -> dict[str, str]:
-    """Load IATA → city mapping from airports.csv. Prefer large/medium airports."""
-    iata_to_city: dict[str, tuple[str, int]] = {}  # city, priority (higher = prefer)
+    """Load IATA -> city mapping from airports.csv or airport-codes.csv."""
+    iata_to_city: dict[str, tuple[str, int]] = {}
     priority = {"large_airport": 3, "medium_airport": 2, "small_airport": 1}
+    csv_names = ["airports.csv", "airport-codes.csv"]
 
     for base in (os.path.dirname(os.path.dirname(os.path.abspath(__file__))), os.getcwd()):
-        path = os.path.join(base, "airports.csv")
-        if os.path.isfile(path):
+        for csv_name in csv_names:
+            path = os.path.join(base, csv_name)
+            if not os.path.isfile(path):
+                continue
             try:
                 with open(path, "r", encoding="utf-8") as f:
                     reader = csv.DictReader(f)
@@ -52,19 +106,17 @@ def _load_iata_to_city_from_csv() -> dict[str, str]:
                             p = priority.get(row.get("type", ""), 0)
                             if iata not in iata_to_city or p > iata_to_city[iata][1]:
                                 iata_to_city[iata] = (city, p)
-                return {k: v[0] for k, v in iata_to_city.items()}
+                if iata_to_city:
+                    return {k: v[0] for k, v in iata_to_city.items()}
             except Exception:
                 pass
-            break
     return {}
 
 
-# Load from CSV at module load; fallback to static if CSV missing
 _IATA_TO_CITY_CACHE: dict[str, str] | None = None
 
 
 def _get_iata_to_city() -> dict[str, str]:
-    """Get IATA_TO_CITY mapping (from CSV or fallback)."""
     global _IATA_TO_CITY_CACHE
     if _IATA_TO_CITY_CACHE is None:
         _IATA_TO_CITY_CACHE = _load_iata_to_city_from_csv()
@@ -74,41 +126,9 @@ def _get_iata_to_city() -> dict[str, str]:
 
 
 def _looks_like_iata(text: str) -> bool:
-    """Check if input looks like an IATA airport code (3 letters)."""
     if not text or len(text) != 3:
         return False
     return text.strip().isalpha()
-
-
-def _fetch_city_from_aviation_edge(iata: str) -> str | None:
-    """Fetch city name from Aviation Edge airport database."""
-    api_key = os.getenv("AVIATION_EDGE_API_KEY") or os.getenv("AVIATIONSTACK_API_KEY")
-    if not api_key:
-        return None
-    url = "https://aviation-edge.com/v2/public/airportDatabase"
-    params = {"key": api_key, "codeIataAirport": iata.upper()}
-    try:
-        r = requests.get(url, params=params, timeout=10)
-        r.raise_for_status()
-        data = r.json()
-        airport = data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else None)
-        if not airport:
-            return None
-        city = (
-            airport.get("cityName")
-            or airport.get("nameCity")
-            or airport.get("city")
-        )
-        if city and isinstance(city, str) and city.strip():
-            return city.strip()
-        name = airport.get("name") or airport.get("nameAirport") or ""
-        if isinstance(name, str) and name:
-            first = name.split()[0] if name.split() else ""
-            if len(first) > 2 and first[0].isupper():
-                return first
-    except Exception:
-        pass
-    return None
 
 
 def resolve_destination_for_hotels(destination: str) -> str:
@@ -126,9 +146,6 @@ def resolve_destination_for_hotels(destination: str) -> str:
     iata = dest.upper()
     iata_to_city = _get_iata_to_city()
     city = iata_to_city.get(iata)
-    if city:
-        return city
-    city = _fetch_city_from_aviation_edge(iata)
     if city:
         return city
     return dest
